@@ -1,0 +1,39 @@
+# Dockerfile.train
+ARG PLATFORM=linux
+
+FROM python:3.10-slim AS base-macos
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base-linux
+
+FROM base-${PLATFORM} AS final
+
+# Install Python 3.10 on Linux base (CUDA image uses Ubuntu, not Python slim)
+RUN if [ "${PLATFORM}" = "linux" ]; then \
+        apt-get update && \
+        apt-get install -y python3.10 python3.10-dev python3-pip && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Copy dependency files
+COPY pyproject.toml .
+COPY src/ src/
+
+# Install dependencies - no lockfile, resolve at build time
+RUN uv sync --no-dev
+
+# Install platform-specific TensorFlow via pip
+ARG PLATFORM
+RUN if [ "${PLATFORM}" = "linux" ]; then \
+        uv run pip install tensorflow==2.15.0; \
+    fi
+
+COPY src/ src/
+
+EXPOSE 2032
+
+CMD ["uv", "run", "uvicorn", "ml_toy_repo.main:app", "--host", "0.0.0.0", "--port", "2032"]
